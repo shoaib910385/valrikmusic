@@ -39,8 +39,8 @@ GIT_TOKEN = getenv(
     "GIT_TOKEN", ""
 )  # Fill this variable if your upstream repository is private
 
-SUPPORT_CHANNEL = getenv("SUPPORT_CHAT", "https://t.me/itzdhruv1060")
-SUPPORT_GROUP = getenv("SUPPORT_GROUP", "https://t.me/itzdhruv1060")
+SUPPORT_CHANNEL = getenv("SUPPORT_CHAT", "https://t.me/+mPJgk9LiT781MDk1")
+SUPPORT_GROUP = getenv("SUPPORT_GROUP", "https://t.me/+uWYmPtVYRlQ2YjI1")
 
 # Set this to True if you want the assistant to automatically leave chats after an interval
 AUTO_LEAVING_ASSISTANT = bool(getenv("AUTO_LEAVING_ASSISTANT", False))
@@ -86,13 +86,13 @@ confirmer = {}
 
 
 START_IMG_URL = getenv(
-    "START_IMG_URL", "https://files.catbox.moe/nzl4fx.mp4"
+    "START_IMG_URL", "https://files.catbox.moe/3dqwe9.jpg"
 )
 PING_IMG_URL = getenv(
-    "PING_IMG_URL", "https://files.catbox.moe/nzl4fx.mp4"
+    "PING_IMG_URL", "https://files.catbox.moe/3dqwe9.jpg"
 )
-PLAYLIST_IMG_URL = "https://files.catbox.moe/nzl4fx.mp4"
-STATS_IMG_URL = "https://files.catbox.moe/nzl4fx.mp4"
+PLAYLIST_IMG_URL = "https://files.catbox.moe/3dqwe9.jpg"
+STATS_IMG_URL = "https://files.catbox.moe/3dqwe9.jpg"
 TELEGRAM_AUDIO_URL = "https://telegra.ph/file/8234d704952738ebcda7f.jpg"
 TELEGRAM_VIDEO_URL = "https://telegra.ph/file/8d02ff3bde400e465219a.jpg"
 STREAM_IMG_URL = "https://telegra.ph/file/e24f4a5f695ec5576a8f3.jpg"
@@ -122,6 +122,7 @@ if SUPPORT_GROUP:
         raise SystemExit(
             "[ERROR] - Your SUPPORT_GROUP url is wrong. Please ensure that it starts with https://"
         )
+
 
 
 
