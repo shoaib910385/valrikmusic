@@ -3,6 +3,7 @@ from pyrogram import filters, enums
 from pyrogram.types import Message
 from groq import Groq
 from os import getenv
+from pymongo import MongoClient
 import re
 import random
 
@@ -14,10 +15,35 @@ OWNER_USERNAME = "@valriks"
 # API SETUP
 groq = Groq(api_key=getenv("GROQ_API_KEY"))
 
-# ─── DATABASE (IN-MEMORY) ────────────────────────────
-# Note: In production, use MongoDB/SQL to save this permanently.
-# Currently, if the bot restarts, groups will need to re-enable.
-CHATBOT_ENABLED_GROUPS = set()
+# ─── DATABASE SETUP (MongoDB) ────────────────────────
+# We use MongoDB to store enabled chats so it persists after restart.
+MONGO_DB_URI = getenv("MONGO_DB_URI")
+
+# Connect to Database
+try:
+    mongo_client = MongoClient(MONGO_DB_URI)
+    db = mongo_client["ElinaChatbot"]
+    chat_collection = db["active_chats"]
+    print("✅ Elina Chatbot Database Connected!")
+except Exception as e:
+    print(f"❌ Database Error: {e}")
+    chat_collection = None
+
+# ─── MEMORY CACHE ────────────────────────────────────
+# We load the DB into this set on startup for faster checking.
+# This prevents querying the DB on every single message.
+ENABLED_CHATS_CACHE = set()
+
+def load_enabled_chats():
+    if chat_collection is None:
+        return
+    # Load all active chat_ids from DB to Memory
+    for doc in chat_collection.find({}, {"chat_id": 1}):
+        ENABLED_CHATS_CACHE.add(doc["chat_id"])
+    print(f"📂 Loaded {len(ENABLED_CHATS_CACHE)} enabled chats.")
+
+# Load immediately when file is imported
+load_enabled_chats()
 
 # ─── STICKERS ────────────────────────────────────────
 STICKER_PACK = [
@@ -76,14 +102,14 @@ def update_memory(uid, role, content):
 # ─── HELPER: CHECK TRIGGERS ──────────────────────────
 def should_reply(message: Message) -> bool:
     """
-    Determines if the bot should reply based on triggers.
+    Determines if the bot should reply based on triggers and DB status.
     """
     # 1. Always reply in Private Chats
     if message.chat.type == enums.ChatType.PRIVATE:
         return True
 
-    # 2. In Groups, check if Chatbot is Enabled
-    if message.chat.id not in CHATBOT_ENABLED_GROUPS:
+    # 2. In Groups, check Cache (Fast)
+    if message.chat.id not in ENABLED_CHATS_CACHE:
         return False
 
     # 3. Check for Reply to Bot
@@ -97,12 +123,11 @@ def should_reply(message: Message) -> bool:
         
     text = message.text.lower()
     
-    # Exact username match or mention
+    # Exact username match
     if f"@{BOT_USERNAME}" in text:
         return True
         
-    # Word boundary check for name (Prevents "Selina" triggering "Elina")
-    # Matches "hi elina", "elina?", "elina!" etc.
+    # Word boundary check for name
     if re.search(rf"\b{BOT_NAME.lower()}\b", text):
         return True
 
@@ -123,11 +148,28 @@ async def chatbot_control(_, message: Message):
     chat_id = message.chat.id
 
     if action == "enable":
-        CHATBOT_ENABLED_GROUPS.add(chat_id)
-        await message.reply_text(f"✨ **{BOT_NAME}** is now active! Say hi.")
+        if chat_id in ENABLED_CHATS_CACHE:
+            await message.reply_text(f"✨ **{BOT_NAME}** is already active here!")
+        else:
+            # Save to DB
+            chat_collection.update_one(
+                {"chat_id": chat_id}, 
+                {"$set": {"chat_id": chat_id}}, 
+                upsert=True
+            )
+            # Update Cache
+            ENABLED_CHATS_CACHE.add(chat_id)
+            await message.reply_text(f"✨ **{BOT_NAME}** is now active! Say hi.")
+
     elif action == "disable":
-        CHATBOT_ENABLED_GROUPS.discard(chat_id)
-        await message.reply_text(f"😴 **{BOT_NAME}** is sleeping now.")
+        if chat_id not in ENABLED_CHATS_CACHE:
+            await message.reply_text(f"😴 **{BOT_NAME}** is already sleeping.")
+        else:
+            # Remove from DB
+            chat_collection.delete_one({"chat_id": chat_id})
+            # Update Cache
+            ENABLED_CHATS_CACHE.discard(chat_id)
+            await message.reply_text(f"😴 **{BOT_NAME}** is sleeping now.")
 
 # ─── HANDLER: STICKERS ───────────────────────────────
 @app.on_message(filters.sticker & ~filters.bot)
@@ -144,7 +186,7 @@ async def handle_conversation(client, message: Message):
     # Cleanup input text
     user_text = message.text.replace(f"@{BOT_USERNAME}", "").strip()
     if not user_text:
-        return # Don't reply to empty tags
+        return 
 
     # Chat Action (Typing...)
     await client.send_chat_action(message.chat.id, enums.ChatAction.TYPING)
@@ -158,7 +200,7 @@ async def handle_conversation(client, message: Message):
         response = groq.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=USER_MEMORY[uid],
-            temperature=0.85, # Slightly lower for more coherence
+            temperature=0.85, 
             max_tokens=150
         )
         
@@ -171,6 +213,6 @@ async def handle_conversation(client, message: Message):
 
     except Exception as e:
         print(f"Groq Error: {e}")
-        # Only reply error if it's a direct conversation to avoid spam
+        # Only reply error if it's a direct conversation
         if message.chat.type == enums.ChatType.PRIVATE:
             await message.reply_text("Neend aa rahi hai... baad mein baat karte hain (Error)")
