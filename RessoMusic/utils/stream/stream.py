@@ -10,6 +10,7 @@ import config
 from RessoMusic import Carbon, YouTube, app
 from RessoMusic.core.call import AMBOTOP
 from RessoMusic.misc import db
+from RessoMusic.core.mongo import mongodb  # <--- ADDED THIS IMPORT
 from RessoMusic.utils.database import add_active_video_chat, is_active_chat
 from RessoMusic.utils.exceptions import AssistantErr
 from RessoMusic.utils.inline import aq_markup, close_markup, stream_markup
@@ -20,8 +21,8 @@ from RessoMusic.utils.thumbnails import gen_thumb
 # --- CONFIGURATION & DATABASE FOR CAPTIONS ---
 ADMIN_ID = 7659846392  # Your Admin ID
 
-# Create/Connect to a collection in MongoDB
-captiondb = db.stream_captions
+# Use 'mongodb' for database operations, not 'db' (which is the queue dict)
+captiondb = mongodb.stream_captions
 
 async def get_stored_caption():
     """Fetches the custom caption from MongoDB."""
