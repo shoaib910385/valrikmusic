@@ -10,13 +10,14 @@ from RessoMusic.utils.decorators.language import language
 from RessoMusic.utils.inline import supp_markup
 from config import BANNED_USERS, PING_IMG_URL
 
+PINGSS = "https://files.catbox.moe/3dqwe9.jpg"
 
 @app.on_message(filters.command(["ping", "alive"]) & ~BANNED_USERS)
 @language
 async def ping_com(client, message: Message, _):
     start = datetime.now()
     response = await message.reply_photo(
-        photo=PING_IMG_URL,
+        photo=PINGSS,
         caption=_["ping_1"].format(app.mention),
     )
     pytgping = await AMBOTOP.ping()
@@ -26,3 +27,4 @@ async def ping_com(client, message: Message, _):
         _["ping_2"].format(resp, app.mention, UP, RAM, CPU, DISK, pytgping),
         reply_markup=supp_markup(_),
     )
+
