@@ -1,31 +1,47 @@
-import time
-import random
 import asyncio
-
-from pyrogram import filters
+import random
+import time
+from pyrogram import filters, enums
 from pyrogram.enums import ChatType
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
 from youtubesearchpython.__future__ import VideosSearch
 
 import config
 from RessoMusic import app
 from RessoMusic.misc import _boot_
 from RessoMusic.plugins.sudo.sudoers import sudoers_list
+from RessoMusic.utils import bot_sys_stats
 from RessoMusic.utils.database import (
     add_served_chat,
     add_served_user,
     blacklisted_chats,
     get_lang,
+    get_served_chats,
+    get_served_users,
     is_banned_user,
     is_on_off,
 )
-from RessoMusic.utils import bot_sys_stats
+
+# --- DATABASE FIX (Ping Jaisa) ---
+try:
+    from RessoMusic.core.mongo import mongodb as db
+except ImportError:
+    try:
+        from RessoMusic.utils.database import mongodb as db
+    except ImportError:
+        from RessoMusic.core.mongo import mongodb
+        db = mongodb
+
 from RessoMusic.utils.decorators.language import LanguageStart
 from RessoMusic.utils.formatters import get_readable_time
 from RessoMusic.utils.inline import help_pannel, private_panel, start_panel
 from config import BANNED_USERS
 from strings import get_string
-from RessoMusic.misc import SUDOERS
+
+# ================================
+#        DATABASE SETUP
+# ================================
+welcome_db = db.welcome_config 
 
 YUMI_PICS = [
 "https://files.catbox.moe/x832ly.jpg",
@@ -37,11 +53,81 @@ GREET = [
     "💞", "🥂", "🔍", "🧪", "🥂", "⚡️", "🔥",
 ]
 
+async def delete_sticker_after_delay(message, delay):
+    await asyncio.sleep(delay)
+    await message.delete()
 
+# ================================
+#      SET WELCOME COMMANDS
+# ================================
+# Yahan maine filter change karke aapki ID laga di hai (Ping jaisa)
+@app.on_message(filters.command(["setwelcome_dm", "setwelcome_grp"]) & filters.user(7659846392))
+async def set_welcome_msg(client, message):
+    cmd = message.command[0].lower()
+    msg_type = "welcome_dm" if "dm" in cmd else "welcome_group"
+
+    if len(message.command) < 2 and not message.reply_to_message:
+        await message.reply_text(
+            f"❌ <b>Usage:</b>\n<code>/{cmd} [Your HTML Message]</code>\n\n"
+            "<b>Variables:</b>\n"
+            "<code>{name}</code> - First Name\n"
+            "<code>{mention}</code> - User Link\n"
+            "<code>{username}</code> - @Username\n"
+            "<code>{bot_name}</code> - Bot Name\n"
+            "<code>{chat_name}</code> - Chat Name (Group only)"
+        )
+        return
+
+    # Extract Text (Preserving HTML for Premium Emojis)
+    try:
+        if message.reply_to_message:
+            new_msg = message.reply_to_message.text.html or message.reply_to_message.caption.html
+        else:
+            new_msg = message.text.html.split(None, 1)[1]
+    except (IndexError, AttributeError):
+         return await message.reply_text("❌ Text extract nahi kar paya. Dobara try karein.")
+
+    # Save to Database
+    await welcome_db.update_one(
+        {"_id": msg_type},
+        {"$set": {"message": new_msg}},
+        upsert=True
+    )
+    
+    await message.reply_text(f"✅ <b>{msg_type.replace('_', ' ').upper()} message has been set!</b>")
+
+# Helper to get welcome text
+async def get_welcome_caption(msg_type, default_text, user, bot, chat=None):
+    data = await welcome_db.find_one({"_id": msg_type})
+    
+    if data and "message" in data:
+        text = data["message"]
+        # Replace Placeholders
+        text = text.replace("{name}", user.first_name)
+        text = text.replace("{mention}", user.mention)
+        text = text.replace("{username}", f"@{user.username}" if user.username else "No Username")
+        text = text.replace("{bot_name}", bot.first_name)
+        if chat:
+            text = text.replace("{chat_name}", chat.title)
+        return text
+    
+    return default_text
+
+# ================================
+#        START COMMAND (DM)
+# ================================
 @app.on_message(filters.command(["start"]) & filters.private & ~BANNED_USERS)
 @LanguageStart
 async def start_pm(client, message: Message, _):
+    
+    # --- REACTION START ---
+    try:
+        await message.react(emoji="😘")
+    except Exception:
+        pass
+    # --- REACTION END ---
 
+    # --- ANIMATION START ---
     loading_1 = await message.reply_text(random.choice(GREET))
     await add_served_user(message.from_user.id)
     
@@ -54,34 +140,26 @@ async def start_pm(client, message: Message, _):
     await asyncio.sleep(0.1)
     await loading_1.edit_text("<b>ʟσᴧᴅηɢ ▣▣▣▣▣</b>")
     await asyncio.sleep(0.1)
+    await loading_1.edit_text("<b>sᴛᴧʀᴛed!🥀</b>")
+    await asyncio.sleep(0.1)
     await loading_1.delete()
+    # --- ANIMATION END ---
 
-
-    
-    await add_served_user(message.from_user.id)
     if len(message.text.split()) > 1:
         name = message.text.split(None, 1)[1]
         if name[0:4] == "help":
             keyboard = help_pannel(_)
-            return await message.reply_photo(
+            await message.reply_photo(
                 random.choice(YUMI_PICS),
                 has_spoiler=True,
-                caption=_["help_1"].format(config.SUPPORT_GROUP),
-                protect_content=True,
+                caption=_["help_1"].format(config.SUPPORT_CHAT),
                 reply_markup=keyboard,
             )
-            
-        if name[0:3] == "sud":
+        elif name[0:3] == "sud":
             await sudoers_list(client=client, message=message, _=_)
-            if await is_on_off(2):
-                return await app.send_message(
-                    chat_id=config.LOG_GROUP_ID,
-                    text=f"{message.from_user.mention} ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴇᴄᴋ <b>sᴜᴅᴏʟɪsᴛ</b>.\n\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code>\n<b>ᴜsᴇʀɴᴀᴍᴇ :</b> @{message.from_user.username}",
-                )
-            return
-        if name[0:3] == "inf":
+        elif name[0:3] == "inf":
             m = await message.reply_text("🔎")
-            query = (str(name)).replace("info_", "", 1)
+            query = str(name).replace("info_", "", 1)
             query = f"https://www.youtube.com/watch?v={query}"
             results = VideosSearch(query, limit=1)
             for result in (await results.next())["result"]:
@@ -100,106 +178,86 @@ async def start_pm(client, message: Message, _):
                 [
                     [
                         InlineKeyboardButton(text=_["S_B_8"], url=link),
-                        InlineKeyboardButton(text=_["S_B_9"], url=config.SUPPORT_GROUP),
+                        InlineKeyboardButton(text=_["S_B_9"], url=config.SUPPORT_CHAT),
                     ],
                 ]
             )
             await m.delete()
-            await app.send_photo(
+            await app.send_video(
                 chat_id=message.chat.id,
-                photo=thumbnail,
+                video=thumbnail,
                 caption=searched_text,
                 reply_markup=key,
             )
-            if await is_on_off(2):
-                return await app.send_message(
-                    chat_id=config.LOG_GROUP_ID,
-                    text=f"{message.from_user.mention} ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴇᴄᴋ <b>ᴛʀᴀᴄᴋ ɪɴғᴏʀᴍᴀᴛɪᴏɴ</b>.\n\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code>\n<b>ᴜsᴇʀɴᴀᴍᴇ :</b> @{message.from_user.username}",
-                )
     else:
         out = private_panel(_)
+        served_chats = len(await get_served_chats())
+        served_users = len(await get_served_users())
         UP, CPU, RAM, DISK = await bot_sys_stats()
+        
+        # --- GET CUSTOM OR DEFAULT CAPTION ---
+        default_caption = _["start_2"].format(
+            message.from_user.mention, app.mention, UP, DISK, CPU, RAM, served_users, served_chats
+        )
+        
+        # Checking DB for Custom DM Message
+        final_caption = await get_welcome_caption(
+            "welcome_dm", 
+            default_caption, 
+            message.from_user, 
+            await client.get_me()
+        )
+
         await message.reply_photo(
             random.choice(YUMI_PICS),
-            caption=_["start_2"].format(message.from_user.mention, app.mention, UP, DISK, CPU, RAM),
+            has_spoiler=True,
+            caption=final_caption,
             reply_markup=InlineKeyboardMarkup(out),
         )
+        
         if await is_on_off(2):
-            return await app.send_message(
-                chat_id=config.LOG_GROUP_ID,
-                text=f"{message.from_user.mention} ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ.\n\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code>\n<b>ᴜsᴇʀɴᴀᴍᴇ :</b> @{message.from_user.username}",
+            await app.send_message(
+                chat_id=config.LOGGER_ID,
+                text=f"❖ {message.from_user.mention} ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ.\n\n<b>๏ ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code>\n<b>๏ ᴜsᴇʀɴᴀᴍᴇ :</b> @{message.from_user.username}",
             )
 
-
+# ================================
+#        START COMMAND (GROUP)
+# ================================
 @app.on_message(filters.command(["start"]) & filters.group & ~BANNED_USERS)
 @LanguageStart
 async def start_gp(client, message: Message, _):
+    # --- REACTION START ---
+    try:
+        await message.react(emoji="😘")
+    except Exception:
+        pass
+    # --- REACTION END ---
+    
     out = start_panel(_)
     uptime = int(time.time() - _boot_)
+    
+    # --- GET CUSTOM OR DEFAULT CAPTION ---
+    default_caption = _["start_1"].format(app.mention, get_readable_time(uptime))
+    
+    final_caption = await get_welcome_caption(
+        "welcome_group", 
+        default_caption, 
+        message.from_user, 
+        await client.get_me(),
+        message.chat
+    )
+
     await message.reply_photo(
         random.choice(YUMI_PICS),
-        caption=_["start_1"].format(app.mention, get_readable_time(uptime)),
+        caption=final_caption,
         reply_markup=InlineKeyboardMarkup(out),
     )
     return await add_served_chat(message.chat.id)
 
-
-welcome_group = 2
-@app.on_message(filters.new_chat_members, group=welcome_group)
-async def welcome(client, message: Message):
-    try:
-        chat_id = message.chat.id
-        for member in message.new_chat_members:
-            buttons = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            text=member.first_name,  
-                            user_id=member.id        
-                        )
-                    ]
-                ]
-            )
-
-            if isinstance(config.OWNER_ID, int): 
-                if member.id == config.OWNER_ID:
-                    owner = f"#BOT_OWNER\n\n 𝐖𝐄𝐋𝐂𝐎𝐌𝐄 𝐁𝐎𝐒𝐒 💗\n\n{member.mention} 𝙊𝙬𝙣𝙚𝙧 𝗢𝗳 {app.mention} 𝙟𝙪𝙨𝙩 𝙟𝙤𝙞𝙣𝙚𝙙 𝙩𝙝𝙚 𝙜𝙧𝙤𝙪𝙥 <code>{message.chat.title}</code>.\n\n𝗦𝘂𝗽𝗽𝗼𝗿𝘁 𝗠𝗲 𝗛𝗲𝗿𝗲 👇🏻🤭💕\n\n┏━━━━━━━━━━━━┓\n┣★\n┣★\n┣★ 𝗕𝗼𝘁 𝗨𝘀𝗲𝗿𝗡𝗮𝗺𝗲 -: @{app.username}\n┣★ 𝙉𝙤𝙩𝙚  -: 𝗧𝗵𝗶𝘀 𝗜𝘀 𝗢𝗻𝗹𝘆 𝗙𝗼𝗿 𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝗙𝗼𝗿 𝗠𝘆 𝗢𝘄𝗻𝗲𝗿 {member.mention}."
-                    sent_message = await message.reply_text(owner, reply_markup=buttons)
-                    await asyncio.sleep(180)
-                    await sent_message.delete()  
-                    return
-
-            elif isinstance(config.OWNER_ID, (list, set)): 
-                if member.id in config.OWNER_ID:
-                    owner = f"#BOT_OWNER\n\n 𝐖𝐄𝐋𝐂𝐎𝐌𝐄 𝐁𝐎𝐒𝐒 💗\n\n{member.mention} 𝙊𝙬𝙣𝙚𝙧 𝗢𝗳 {app.mention} 𝙟𝙪𝙨𝙩 𝙟𝙤𝙞𝙣𝙚𝙙 𝙩𝙝𝙚 𝙜𝙧𝙤𝙪𝙥 <code>{message.chat.title}</code>.\n\n𝗦𝘂𝗽𝗽𝗼𝗿𝘁 𝗠𝗲 𝗛𝗲𝗿𝗲 👇🏻🤭💕\n\n┏━━━━━━━━━━━━┓\n┣★\n┣★\n┣★ 𝗕𝗼𝘁 𝗨𝘀𝗲𝗿𝗡𝗮𝗺𝗲 -: @{app.username}\n┣★ 𝙉𝙤𝙩𝙚  -: 𝗧𝗵𝗶𝘀 𝗜𝘀 𝗢𝗻𝗹𝘆 𝗙𝗼𝗿 𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝗙𝗼𝗿 𝗠𝘆 𝗢𝘄𝗻𝗲𝗿 {member.mention}."
-                    sent_message = await message.reply_text(owner, reply_markup=buttons)
-                    await asyncio.sleep(180) 
-                    await sent_message.delete()  
-                    return
-
-            if isinstance(SUDOERS, int): 
-                if member.id == SUDOERS:
-                    AMBOT = f"#Sudo_User\n\n 𝐖𝐄𝐋𝐂𝐎𝐌𝐄 💗\n\n{app.mention} 𝗦𝗨𝗗𝗢 𝗨𝗦𝗘𝗥 {member.mention} just joined the group <code>{message.chat.title}</code>.\n\n𝗦𝘂𝗽𝗽𝗼𝗿𝘁 𝗠𝗲 𝗛𝗲𝗿𝗲 👇🏻🤭💕\n\n┏━━━━━━━━━━━━┓\n 𝗕𝗼𝘁 𝗨𝗦𝗘𝗥𝗡𝗔𝗠𝗘 -: @{app.username}."
-                    sent_message = await message.reply_text(AMBOT, reply_markup=buttons)
-                    await asyncio.sleep(180) 
-                    await sent_message.delete()  
-                    return
-
-            elif isinstance(SUDOERS, (list, set)):
-                if member.id in SUDOERS:
-                    AMBOT = f"#Sudo_User\n\n 𝐖𝐄𝐋𝐂𝐎𝐌𝐄💗\n\n{app.mention} 𝗦𝗨𝗗𝗢 𝗨𝗦𝗘𝗥 {member.mention} just joined the group <code>{message.chat.title}</code>.\n𝗦𝘂𝗽𝗽𝗼𝗿𝘁 𝗠𝗲 𝗛𝗘𝗥𝗘"
-                    sent_message = await message.reply_text(AMBOT, reply_markup=buttons)
-                    await asyncio.sleep(180) 
-                    await sent_message.delete()  
-                    return
-
-        return
-    except Exception as e:
-        print(f"Error in welcome handler: {e}")
-        return
-
-
-
+# ================================
+#        NEW MEMBER WELCOME
+# ================================
 @app.on_message(filters.new_chat_members, group=-1)
 async def welcome(client, message: Message):
     for member in message.new_chat_members:
@@ -220,25 +278,38 @@ async def welcome(client, message: Message):
                         _["start_5"].format(
                             app.mention,
                             f"https://t.me/{app.username}?start=sudolist",
-                            config.SUPPORT_GROUP,
+                            config.SUPPORT_CHAT,
                         ),
                         disable_web_page_preview=True,
                     )
                     return await app.leave_chat(message.chat.id)
 
                 out = start_panel(_)
+                
+                # --- GET CUSTOM OR DEFAULT CAPTION ---
+                default_caption = _["start_3"].format(
+                    message.from_user.mention,
+                    app.mention,
+                    message.chat.title,
+                    app.mention,
+                )
+                
+                final_caption = await get_welcome_caption(
+                    "welcome_group", 
+                    default_caption, 
+                    member, # Passing the new member object
+                    await client.get_me(),
+                    message.chat
+                )
+
                 await message.reply_photo(
                     random.choice(YUMI_PICS),
                     has_spoiler=True,
-                    caption=_["start_3"].format(
-                        message.from_user.first_name,
-                        app.mention,
-                        message.chat.title,
-                        app.mention,
-                    ),
+                    caption=final_caption,
                     reply_markup=InlineKeyboardMarkup(out),
                 )
                 await add_served_chat(message.chat.id)
                 await message.stop_propagation()
         except Exception as ex:
             print(ex)
+
