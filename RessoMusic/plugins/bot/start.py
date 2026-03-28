@@ -44,7 +44,7 @@ from strings import get_string
 welcome_db = db.welcome_config 
 
 YUMI_PICS = [
-"https://files.catbox.moe/quurfp.jpg"
+"https://files.catbox.moe/gk7opm.mp4"
 ]
 
 GREET = [
@@ -147,7 +147,7 @@ async def start_pm(client, message: Message, _):
         name = message.text.split(None, 1)[1]
         if name[0:4] == "help":
             keyboard = help_pannel(_)
-            await message.reply_photo(
+            await message.reply_video(
                 random.choice(YUMI_PICS),
                 has_spoiler=True,
                 caption=_["help_1"].format(config.SUPPORT_CHAT),
@@ -206,7 +206,7 @@ async def start_pm(client, message: Message, _):
             await client.get_me()
         )
 
-        await message.reply_photo(
+        await message.reply_video(
             random.choice(YUMI_PICS),
             has_spoiler=True,
             caption=final_caption,
@@ -246,7 +246,7 @@ async def start_gp(client, message: Message, _):
         message.chat
     )
 
-    await message.reply_photo(
+    await message.reply_video(
         random.choice(YUMI_PICS),
         caption=final_caption,
         reply_markup=InlineKeyboardMarkup(out),
@@ -300,7 +300,7 @@ async def welcome(client, message: Message):
                     message.chat
                 )
 
-                await message.reply_photo(
+                await message.reply_video(
                     random.choice(YUMI_PICS),
                     has_spoiler=True,
                     caption=final_caption,
