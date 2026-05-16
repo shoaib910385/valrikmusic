@@ -30,7 +30,6 @@ yt-dlp
 youtube-search
 youtube-search-python
 py-yt-search
-httpx[http2]==0.27.2
 bs4
 
 
