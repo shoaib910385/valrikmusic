@@ -8,6 +8,7 @@ gitpython
 groq
 hachoir
 heroku3
+httpx
 motor==2.5.0
 numpy
 opencv-python
